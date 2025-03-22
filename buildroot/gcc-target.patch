@@ -1,0 +1,201 @@
+diff --git a/Makefile b/Makefile
+index 0fcd1ced..a0641371 100644
+--- a/Makefile
++++ b/Makefile
+@@ -722,13 +722,13 @@ target-finalize: $(PACKAGES) $(TARGET_DIR) host-finalize
+ 	@$(call MESSAGE,"Finalizing target directory")
+ 	$(call per-package-rsync,$(sort $(PACKAGES)),target,$(TARGET_DIR))
+ 	$(foreach hook,$(TARGET_FINALIZE_HOOKS),$($(hook))$(sep))
+-	rm -rf $(TARGET_DIR)/usr/include $(TARGET_DIR)/usr/share/aclocal \
++	rm -rf $(TARGET_DIR)/usr/share/aclocal \
+ 		$(TARGET_DIR)/usr/lib/pkgconfig $(TARGET_DIR)/usr/share/pkgconfig \
+ 		$(TARGET_DIR)/usr/lib/cmake $(TARGET_DIR)/usr/share/cmake \
+ 		$(TARGET_DIR)/usr/lib/rpm $(TARGET_DIR)/usr/doc
+ 	find $(TARGET_DIR)/usr/{lib,share}/ -name '*.cmake' -print0 | xargs -0 rm -f
+ 	find $(TARGET_DIR)/lib/ $(TARGET_DIR)/usr/lib/ $(TARGET_DIR)/usr/libexec/ \
+-		\( -name '*.a' -o -name '*.la' -o -name '*.prl' \) -print0 | xargs -0 rm -f
++		\( -name '*.la' -o -name '*.prl' \) -print0 | xargs -0 rm -f
+ ifneq ($(BR2_PACKAGE_GDB),y)
+ 	rm -rf $(TARGET_DIR)/usr/share/gdb
+ endif
+diff --git a/package/Config.in b/package/Config.in
+index e9e8d93d..f971bae2 100644
+--- a/package/Config.in
++++ b/package/Config.in
+@@ -183,6 +183,7 @@ menu "Development tools"
+ 	source "package/findutils/Config.in"
+ 	source "package/flex/Config.in"
+ 	source "package/gawk/Config.in"
++	source "package/gcc/Config.in"
+ 	source "package/gettext/Config.in"
+ 	source "package/gettext-gnu/Config.in"
+ 	source "package/gettext-tiny/Config.in"
+diff --git a/package/gcc/Config.in b/package/gcc/Config.in
+new file mode 100644
+index 00000000..d06dac01
+--- /dev/null
++++ b/package/gcc/Config.in
+@@ -0,0 +1,20 @@
++config BR2_PACKAGE_GCC_TARGET
++	bool "gcc"
++	depends on BR2_TOOLCHAIN_BUILDROOT
++	select BR2_PACKAGE_BINUTILS
++	select BR2_PACKAGE_BINUTILS_TARGET
++	select BR2_PACKAGE_GMP
++	select BR2_PACKAGE_MPFR
++	select BR2_PACKAGE_MPC
++	help
++	  If you want the target system to be able to run
++	  binutils/gcc and compile native code, say Y here.
++
++config BR2_EXTRA_TARGET_GCC_CONFIG_OPTIONS
++	string "Additional target gcc options"
++	default ""
++	depends on BR2_PACKAGE_GCC_TARGET
++	help
++	  Any additional target gcc options you may want to include....
++	  Including, but not limited to --disable-checking etc.
++	  Refer to */configure in your gcc sources.
+diff --git a/package/gcc/gcc-target/gcc-target.hash b/package/gcc/gcc-target/gcc-target.hash
+new file mode 120000
+index 00000000..7ac9361a
+--- /dev/null
++++ b/package/gcc/gcc-target/gcc-target.hash
+@@ -0,0 +1 @@
++../gcc.hash
+\ No newline at end of file
+diff --git a/package/gcc/gcc-target/gcc-target.mk b/package/gcc/gcc-target/gcc-target.mk
+new file mode 100644
+index 00000000..4fc6d9b9
+--- /dev/null
++++ b/package/gcc/gcc-target/gcc-target.mk
+@@ -0,0 +1,79 @@
++################################################################################
++#
++# gcc-target
++#
++################################################################################
++
++GCC_TARGET_VERSION = $(GCC_VERSION)
++GCC_TARGET_SITE = $(GCC_SITE)
++GCC_TARGET_SOURCE = $(GCC_SOURCE)
++
++# Use the same archive as gcc-initial and gcc-final
++GCC_TARGET_DL_SUBDIR = gcc
++
++GCC_TARGET_DEPENDENCIES = gmp mpfr mpc
++
++# First, we use HOST_GCC_COMMON_MAKE_OPTS to get a lot of correct flags (such as
++# the arch, abi, float support, etc.) which are based on the config used to
++# build the internal toolchain
++GCC_TARGET_CONF_OPTS = $(HOST_GCC_COMMON_CONF_OPTS)
++# Then, we modify incorrect flags from HOST_GCC_COMMON_CONF_OPTS
++GCC_TARGET_CONF_OPTS += \
++	--with-sysroot=/ \
++	--with-build-sysroot=$(STAGING_DIR) \
++	--disable-__cxa_atexit \
++	--with-gmp=$(STAGING_DIR) \
++	--with-mpc=$(STAGING_DIR) \
++	--with-mpfr=$(STAGING_DIR)
++# Then, we force certain flags that may appear in HOST_GCC_COMMON_CONF_OPTS
++GCC_TARGET_CONF_OPTS += \
++	--disable-libquadmath \
++	--disable-libsanitizer \
++	--disable-plugin \
++	--disable-lto
++# Finally, we add some of our own flags
++GCC_TARGET_CONF_OPTS += \
++	--enable-languages=c,c++ \
++	--disable-boostrap \
++	--disable-libgomp \
++	--disable-nls \
++	--disable-libmpx \
++	--disable-gcov \
++	$(EXTRA_TARGET_GCC_CONFIG_OPTIONS)
++
++GCC_TARGET_CONF_ENV = $(HOST_GCC_COMMON_CONF_ENV)
++
++GCC_TARGET_MAKE_OPTS += $(HOST_GCC_COMMON_MAKE_OPTS)
++
++# Install standard C headers (from glibc)
++define GCC_TARGET_INSTALL_HEADERS
++	cp -r $(STAGING_DIR)/usr/include $(TARGET_DIR)/usr
++endef
++GCC_TARGET_POST_INSTALL_TARGET_HOOKS += GCC_TARGET_INSTALL_HEADERS
++
++GCC_TARGET_GLIBC_LIBS = \
++	libBrokenLocale.so libanl.so libbfd.so libc.so libcrypt.so libdl.so \
++	libm.so libnss_compat.so libnss_db.so libnss_files.so libnss_hesiod.so \
++	libpthread.so libresolv.so librt.so libthread_db.so libutil.so
++
++# Install standard C libraries (from glibc)
++define GCC_TARGET_INSTALL_LIBS
++	for libpattern in $(GCC_TARGET_GLIBC_LIBS); do \
++		$(call copy_toolchain_lib_root,$$libpattern) ; \
++	done
++	cp -dpf $(STAGING_DIR)/usr/lib/*crt*.o $(TARGET_DIR)/usr/lib/
++	cp -dpf $(STAGING_DIR)/usr/lib/*_nonshared.a $(TARGET_DIR)/usr/lib/
++endef
++GCC_TARGET_POST_INSTALL_TARGET_HOOKS += GCC_TARGET_INSTALL_LIBS
++
++# Remove unnecessary files (extra links to gcc binaries, and libgcc which is
++# already in `/lib`)
++define GCC_TARGET_RM_FILES
++	rm -f $(TARGET_DIR)/usr/bin/$(ARCH)-buildroot-linux-gnu-gcc*
++	rm -f $(TARGET_DIR)/usr/lib/libgcc_s*.so*
++	rm -f $(TARGET_DIR)/usr/$(ARCH)-buildroot-linux-gnu/lib/ldscripts/elf32*
++	rm -f $(TARGET_DIR)/usr/$(ARCH)-buildroot-linux-gnu/lib/ldscripts/elf64b*
++endef
++GCC_TARGET_POST_INSTALL_TARGET_HOOKS += GCC_TARGET_RM_FILES
++
++$(eval $(autotools-package))
+diff --git a/package/mjpg-streamer/mjpg-streamer.hash b/package/mjpg-streamer/mjpg-streamer.hash
+index 164c9b21..2a31e191 100644
+--- a/package/mjpg-streamer/mjpg-streamer.hash
++++ b/package/mjpg-streamer/mjpg-streamer.hash
+@@ -1,3 +1,4 @@
+ # Locally computed
+-sha256  5b427b07c03c2c0468cc782daf1510d315141170246828fcbb7c07f927879973  mjpg-streamer-5a6e0a2db163e6ae9461552b59079870d0959340.tar.gz
++# sha256  5b427b07c03c2c0468cc782daf1510d315141170246828fcbb7c07f927879973  mjpg-streamer-5a6e0a2db163e6ae9461552b59079870d0959340.tar.gz
++sha256  7ebd18740213ef8647ccb70727d61d7ae7530241b9f4eb26035692cb90e812a0  mjpg-streamer-7b24e2a593a0029c6f555c9001be87a34eceecc6.tar.gz
+ sha256  ab15fd526bd8dd18a9e77ebc139656bf4d33e97fc7238cd11bf60e2b9b8666c6  mjpg-streamer-experimental/LICENSE
+diff --git a/package/mjpg-streamer/mjpg-streamer.mk b/package/mjpg-streamer/mjpg-streamer.mk
+index 46f3f501..9e3249ac 100644
+--- a/package/mjpg-streamer/mjpg-streamer.mk
++++ b/package/mjpg-streamer/mjpg-streamer.mk
+@@ -4,8 +4,10 @@
+ #
+ ################################################################################
+ 
+-MJPG_STREAMER_VERSION = 5a6e0a2db163e6ae9461552b59079870d0959340
+-MJPG_STREAMER_SITE = $(call github,jacksonliam,mjpg-streamer,$(MJPG_STREAMER_VERSION))
++#MJPG_STREAMER_VERSION = 5a6e0a2db163e6ae9461552b59079870d0959340
++#MJPG_STREAMER_SITE = $(call github,jacksonliam,mjpg-streamer,$(MJPG_STREAMER_VERSION))
++MJPG_STREAMER_VERSION = 7b24e2a593a0029c6f555c9001be87a34eceecc6
++MJPG_STREAMER_SITE = $(call github,bkuhls,mjpg-streamer,$(MJPG_STREAMER_VERSION))
+ MJPG_STREAMER_SUBDIR = mjpg-streamer-experimental
+ MJPG_STREAMER_LICENSE = GPL-2.0+
+ MJPG_STREAMER_LICENSE_FILES = $(MJPG_STREAMER_SUBDIR)/LICENSE
+diff --git a/package/tar/tar.mk b/package/tar/tar.mk
+index eea112eb..8a612b6f 100644
+--- a/package/tar/tar.mk
++++ b/package/tar/tar.mk
+@@ -7,9 +7,15 @@
+ TAR_VERSION = 1.35
+ TAR_SOURCE = tar-$(TAR_VERSION).tar.xz
+ TAR_SITE = $(BR2_GNU_MIRROR)/tar
+-# busybox installs in /bin, so we need tar to install as well in /bin
+-# so that we don't end up with two different tar
+-TAR_CONF_OPTS = --exec-prefix=/
++# --exec-prefix=/: busybox installs in /bin, so we need tar to install
++# as well in /bin so that we don't end up with two different tar
++#
++# --disable-year2038: tells the configure script to not abort if the
++# system is not Y2038 compliant. tar will support year2038 if the
++# system is compliant even with this option passed
++TAR_CONF_OPTS = \
++	--exec-prefix=/ \
++	--disable-year2038
+ TAR_LICENSE = GPL-3.0+
+ TAR_LICENSE_FILES = COPYING
+ TAR_CPE_ID_VENDOR = gnu
