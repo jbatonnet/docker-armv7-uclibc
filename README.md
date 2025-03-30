@@ -15,6 +15,13 @@ docker build --platform=linux/arm/v7 -t ghcr.io/jbatonnet/armv7-uclibc .
 docker push ghcr.io/jbatonnet/armv7-uclibc
 ```
 
+Optional: Tag it for Rinkhals
+
+```
+docker tag ghcr.io/jbatonnet/armv7-uclibc ghcr.io/jbatonnet/armv7-uclibc:rinkhals
+docker push ghcr.io/jbatonnet/armv7-uclibc:rinkhals
+```
+
 ### 3. Use it to build anything ARMv7 with uclibc
 
 ```
