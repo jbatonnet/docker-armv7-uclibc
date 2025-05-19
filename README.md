@@ -4,7 +4,7 @@ I could not find a Docker image ready for ARMv7 and uclibc. So here is one
 
 ```
 docker build -t ghcr.io/jbatonnet/docker-armv7-uclibc/buildroot -f buildroot/Dockerfile buildroot
-docker run --rm -it -v .\buildroot\.config:/buildroot/.config -v .\buildroot\busybox.config:/buildroot/busybox.config -v .\buildroot:/work ghcr.io/jbatonnet/docker-armv7-uclibc/buildroot /work/build-rootfs.sh
+docker run --rm -it -v .\buildroot\.config:/buildroot/.config -v .\buildroot\busybox.config:/buildroot/busybox.config -v .\buildroot\linux.config:/buildroot/linux.config -v .\buildroot:/work ghcr.io/jbatonnet/docker-armv7-uclibc/buildroot /work/build-rootfs.sh
 ```
 
 ### 2. Build the final Docker image
